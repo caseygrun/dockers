@@ -1,0 +1,20 @@
+{
+  "name": "dockers",
+  "description": "NodeJS interface to Pandoc with support for JSON-transformations",
+  "keywords": [
+    "pandoc",
+    "json",
+    "filter",
+    "transform"
+  ],
+  "author": {
+    "name": "Casey Grun"
+  },
+  "version": "0.0.1",
+  "license": "MIT",
+  "main": ".",
+  "dependencies": {
+    "underscore": "~1.5.2",
+    "async": "~0.2.9"
+  }
+}
