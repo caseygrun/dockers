@@ -1,5 +1,7 @@
 _ = require('underscore')
 async = require('async')
+tmp = require('tmp')
+
 
 pth = require('path')
 spawn = require('child_process').spawn
@@ -15,6 +17,15 @@ getFormatOptions = (to, opt) ->
 		to = formats[to][0]
 	[to, opt]
 
+buildArguments = (opt) ->
+	args = []
+	for key, value in opt
+		if key == 'to' then key = '-t'
+		if key == 'from' then key = '-f'
+		if value && value != true then args.push(key).push(value)
+		else args.push(key)
+	args
+
 ###*
  * Invokes Pandoc with the given source text and array of command-line options
  * @param  {String} src Input text
@@ -24,10 +35,7 @@ getFormatOptions = (to, opt) ->
  * @param  {String} callback.result Output text
 ###
 runPandoc = (src, args, callback) ->
-	# console.log 'runpandoc:'
-	# console.log arguments;
-	# console.trace()
-
+	
 	do (src, args, callback) -> 
 		pandoc = spawn('pandoc', args);
 
@@ -52,6 +60,10 @@ runPandoc = (src, args, callback) ->
 		pandoc.stderr.resume();
 
 		pandoc.stdin.end(src, 'utf8');
+
+pandoc = (src, opt, cb) ->
+	args = buildArguments(opt);
+	runPandoc(src, args, cb);
 
 ###*
  * Invokes pandoc to convert the input text `src` from one format to another, with optional arguments `opt`
@@ -105,7 +117,7 @@ pdcToFile = (src, from, to, out, opt, cb) ->
  * 
  *     - `currentTree`: a JSON array containing the current Pandoc document tree, 
  *        as modified by previous middleware
- *     - `next(err, finalTree)`: a callback to be called upon completion of the present middleware
+ *     - `next(err, updatedTree)`: a callback to be called upon completion of the present middleware
  * 
  * Each middleware function should modify the passed `currentTree` as suitable, then call `next` 
  * with either an `Error` or the modified tree. This modified tree will be passed to subsequent 
@@ -117,26 +129,50 @@ pdcToFile = (src, from, to, out, opt, cb) ->
  ###
 pipeline = (text, from, to, options, middleware, callback) ->
 	
+	# function to be run before any of the middleware
 	pre = (cb) -> 
+
+		# execute pandoc once to generate a JSON parse-tree of the input text
 		pdc text,from,'json',options,(err, tree) ->
 			if err 
 				cb(err) 
 			else 
-				try 
-					console.log 'tree from pandoc:'
-					console.log tree
+				# attempt to parse the tree (as text) to an object
+				try
 					t = JSON.parse(tree);
 				catch e  
 					return cb(e)
 				cb(null,t);
 
+	# function to be run after all the middleware
 	post = (tree,cb) -> 
+
+		# dump final tree to string
 		finalText = JSON.stringify(tree)
+
+		# send final tree to pandoc to generate output text
 		pdc finalText,'json',to,options,cb
 
+	# generate chain of functions to be executed by async.waterfall, starting
+	# with `pre` and ending with `post`.
 	chain = ([ pre ]).concat(middleware).concat([ post ]);
-
 	async.waterfall chain, callback
+
+###*
+ * Generates a path to a temporary file, optionally touching that file
+ * @param  {Mixed} data If not null, the file will be created on disk. Otherwise, only a file path will be returned
+ * @param  {Function} cb Callback to be passed the new filename
+ * @param {Error} cb.err Error if one occurs while creating the new file
+ * @param {String} cb.filename Path to the new file
+###
+tempFile = (data,cb) ->
+	if !cb? 
+		cb = data; data = null;
+
+	if data 
+		tmp.file(cb)
+	else 
+		tmp.tmpName(cb)
 
 module.exports = me =
 
@@ -151,7 +187,7 @@ module.exports = me =
 		# callback(text)
 	
 	convertFile: (text, from, to, options, callback) ->
-		wiki.tempFile (err,outputFile) -> 
+		tempFile (err,outputFile) -> 
 			if err then return callback(err)
 
 			pdcToFile text, from, to, outputFile, options, (err, data) -> 
