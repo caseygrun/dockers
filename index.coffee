@@ -11,6 +11,11 @@ formats = {
 	'pdf': [null, []]
 }
 
+defaultOptions = {
+	'from': 'markdown'
+	'to': 'html'
+}
+
 getFormatOptions = (to, opt) ->
 	if formats[to]
 		opt.concat(formats[to][1])
@@ -19,12 +24,14 @@ getFormatOptions = (to, opt) ->
 
 buildArguments = (opt) ->
 	args = []
-	for key, value in opt
+	for key, value of opt
 		if key == 'to' then key = '-t'
 		if key == 'from' then key = '-f'
-		if value && value != true then args.push(key).push(value)
+		if key == 'out' then key = '-o'
+
+		if value && value != true then args.push(key); args.push(value)
 		else args.push(key)
-	args
+	return args
 
 ###*
  * Invokes Pandoc with the given source text and array of command-line options
@@ -107,9 +114,7 @@ pdcToFile = (src, from, to, out, opt, cb) ->
 ###*
  * Runs a pipeline of middleware to process JSON trees from Pandoc
  * @param  {String} text Input text
- * @param  {String} from Format to use when parsing the input text
- * @param  {String} to Final format in which the output should be provided
- * @param  {Array} options Array of options to be passed to Pandoc
+ * @param  {Object} options Hash of options to be passed to Pandoc
  * 
  * @param  {Function[]} middleware 
  * Array of functions to be called between the input and output.
@@ -127,13 +132,20 @@ pdcToFile = (src, from, to, out, opt, cb) ->
  * @param {Error} callback.err Error if one occurs
  * @param {String} callback.output Output text
  ###
-pipeline = (text, from, to, options, middleware, callback) ->
-	
+pipeline = (text, options={}, middleware, callback) ->
+	_.defaults(options, defaultOptions)
+
+	from = options.from
+	to = options.to
+
+	delete options.from
+	delete options.to
+
 	# function to be run before any of the middleware
 	pre = (cb) -> 
 
 		# execute pandoc once to generate a JSON parse-tree of the input text
-		pdc text,from,'json',options,(err, tree) ->
+		pandoc text, { from: from , to: 'json' },(err, tree) ->
 			if err 
 				cb(err) 
 			else 
@@ -151,7 +163,7 @@ pipeline = (text, from, to, options, middleware, callback) ->
 		finalText = JSON.stringify(tree)
 
 		# send final tree to pandoc to generate output text
-		pdc finalText,'json',to,options,cb
+		pandoc finalText, _.extend({ from: 'json', to: to }, options), cb
 
 	# generate chain of functions to be executed by async.waterfall, starting
 	# with `pre` and ending with `post`.
@@ -176,19 +188,19 @@ tempFile = (data,cb) ->
 
 module.exports = me =
 
-	pipeline: (text, from, to, options, middleware, callback) ->
-		pipeline(text, from, to, options, middleware, callback)
+	pipeline: (text, options, middleware, callback) ->
+		pipeline(text, options, middleware, callback)
 
 	pipelineFile: (text, from, to, options, middleware, callback) ->
 		# pipeline(text, from, to, options, middleware, me.convertFile, callback)
 
-	convert: (text, from, to, options=[], callback) ->
-		pdc(text, from, to, options, callback)
+	convert: (text, options={}, callback) ->
+		pandoc(text, options, callback)
 		# callback(text)
 	
-	convertFile: (text, from, to, options, callback) ->
+	convertFile: (text, options, callback) ->
 		tempFile (err,outputFile) -> 
 			if err then return callback(err)
 
-			pdcToFile text, from, to, outputFile, options, (err, data) -> 
+			pandoc text, _.extend({ 'out': outputFile }, options), (err, data) -> 
 				callback(err, outputFile)

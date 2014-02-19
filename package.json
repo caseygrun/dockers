@@ -19,6 +19,7 @@
     "tmp": "0.0.21"
   },
   "devDependencies": {
-    "qunit": "~0.5.16"
+    "qunit": "~0.5.16",
+    "async": "~0.2.10"
   }
 }
